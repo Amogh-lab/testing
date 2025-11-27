@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useLocation } from "wouter";
 import { ArrowLeft, ArrowRight, CheckCircle, XCircle, RotateCcw, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,81 +15,54 @@ interface Question {
   correctAnswer: string;
 }
 
-function generateQuestions(prompt: string): Question[] {
-  const topic = prompt.replace(/^visualize\s+/i, "").replace(/^the\s+/i, "");
-  
-  return [
-    {
-      id: "q1",
-      question: `What is the primary principle behind ${topic}?`,
-      options: [
-        { id: "a", text: "A change in wave properties due to relative motion" },
-        { id: "b", text: "The reflection of energy from a surface" },
-        { id: "c", text: "The absorption of particles by matter" },
-        { id: "d", text: "Static equilibrium of forces" },
-      ],
-      correctAnswer: "a",
-    },
-    {
-      id: "q2",
-      question: `In which field is ${topic} most commonly observed?`,
-      options: [
-        { id: "a", text: "Architecture and construction" },
-        { id: "b", text: "Physics and astronomy" },
-        { id: "c", text: "Literature and arts" },
-        { id: "d", text: "Agriculture" },
-      ],
-      correctAnswer: "b",
-    },
-    {
-      id: "q3",
-      question: `What happens when the source of ${topic} moves toward an observer?`,
-      options: [
-        { id: "a", text: "The effect becomes weaker" },
-        { id: "b", text: "Nothing changes" },
-        { id: "c", text: "The frequency appears higher" },
-        { id: "d", text: "The phenomenon stops" },
-      ],
-      correctAnswer: "c",
-    },
-    {
-      id: "q4",
-      question: `Which of these is a real-world application of ${topic}?`,
-      options: [
-        { id: "a", text: "Cooking food" },
-        { id: "b", text: "Radar speed detection" },
-        { id: "c", text: "Printing documents" },
-        { id: "d", text: "Writing software" },
-      ],
-      correctAnswer: "b",
-    },
-    {
-      id: "q5",
-      question: `Who is credited with discovering or describing ${topic}?`,
-      options: [
-        { id: "a", text: "Albert Einstein" },
-        { id: "b", text: "Isaac Newton" },
-        { id: "c", text: "Christian Doppler" },
-        { id: "d", text: "Galileo Galilei" },
-      ],
-      correctAnswer: "c",
-    },
-  ];
-}
-
 export default function Quiz() {
-  const { currentPrompt, submitQuiz } = useApp();
+  const { currentPrompt, submitQuiz, currentNotes } = useApp();
   const [, setLocation] = useLocation();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState<{ passed: boolean; message: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
   const prompt = currentPrompt || "Doppler Effect";
-  const questions = useMemo(() => generateQuestions(prompt), [prompt]);
   const currentQuestion = questions[currentIndex];
+
+  useEffect(() => {
+    const fetchQuestions = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch("/api/quiz/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt, notesText: currentNotes?.notesText ?? null }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data?.questions && Array.isArray(data.questions)) {
+          setQuestions(data.questions);
+          setCurrentIndex(0);
+          setAnswers({});
+          return;
+        }
+        throw new Error("Malformed quiz payload");
+      } catch (err) {
+        toast({
+          title: "Failed to load quiz",
+          description: "Using fallback questions.",
+          variant: "destructive",
+        });
+        // Fallback to empty set to avoid inconsistent UI
+        setQuestions([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchQuestions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prompt]);
 
   const handleSelect = (optionId: string) => {
     setAnswers((prev) => ({ ...prev, [currentQuestion.id]: optionId }));
@@ -226,15 +199,19 @@ export default function Quiz() {
             <CardTitle className="sr-only">Question {currentIndex + 1}</CardTitle>
           </CardHeader>
           <CardContent>
-            <QuizCard
-              questionNumber={currentIndex + 1}
-              totalQuestions={questions.length}
-              question={currentQuestion.question}
-              options={currentQuestion.options}
-              correctAnswer={currentQuestion.correctAnswer}
-              selectedAnswer={answers[currentQuestion.id] || null}
-              onSelect={handleSelect}
-            />
+            {loading || !currentQuestion ? (
+              <div className="text-muted-foreground">Loading questions...</div>
+            ) : (
+              <QuizCard
+                questionNumber={currentIndex + 1}
+                totalQuestions={questions.length}
+                question={currentQuestion.question}
+                options={currentQuestion.options}
+                correctAnswer={currentQuestion.correctAnswer}
+                selectedAnswer={answers[currentQuestion.id] || null}
+                onSelect={handleSelect}
+              />
+            )}
 
             <div className="flex items-center justify-between mt-8 pt-6 border-t border-border">
               <Button
@@ -254,13 +231,13 @@ export default function Quiz() {
               {currentIndex === questions.length - 1 ? (
                 <Button
                   onClick={handleSubmit}
-                  disabled={!allAnswered || isSubmitting}
+                  disabled={!allAnswered || isSubmitting || questions.length === 0}
                   data-testid="button-submit-quiz"
                 >
                   {isSubmitting ? "Submitting..." : "Submit Quiz"}
                 </Button>
               ) : (
-                <Button onClick={handleNext} data-testid="button-next-question">
+                <Button onClick={handleNext} disabled={questions.length === 0} data-testid="button-next-question">
                   Next
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>

@@ -54,6 +54,53 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
+  app.post("/api/quiz/generate", async (req, res) => {
+    try {
+      const schema = z.object({
+        prompt: z.string().min(1),
+        notesText: z.string().optional().nullable(),
+      });
+      const { prompt, notesText } = schema.parse(req.body);
+
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return res.status(500).json({ error: "GEMINI_API_KEY not configured" });
+      }
+
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+      const system = `You generate multiple-choice quizzes. Output STRICT JSON only. No markdown, no commentary. Structure: {"questions":[{"id":"q1","question":"...","options":[{"id":"a","text":"..."},{"id":"b","text":"..."},{"id":"c","text":"..."},{"id":"d","text":"..."}],"correctAnswer":"a"}, ... five total]}. Rules: 5 questions total, each with exactly 4 options (a,b,c,d). Questions must be grounded in the provided topic/notes. Keep answers unambiguous.`;
+      const user = `Topic: ${prompt}\nNotes (optional): ${notesText ?? ""}\nCreate 5 MCQs as per the structure.`;
+
+      const result = await model.generateContent([system, user]);
+      const text = result.response.text().trim();
+
+      let payload: any;
+      try {
+        const cleaned = text.replace(/^```json\s*/i, "").replace(/```\s*$/i, "");
+        payload = JSON.parse(cleaned);
+      } catch {
+        return res.status(502).json({ error: "LLM returned invalid JSON" });
+      }
+
+      const questionSchema = z.object({
+        id: z.string(),
+        question: z.string(),
+        options: z.array(z.object({ id: z.enum(["a","b","c","d"]), text: z.string() })).length(4),
+        correctAnswer: z.enum(["a","b","c","d"]),
+      });
+      const parsed = z.object({ questions: z.array(questionSchema).length(5) }).safeParse(payload);
+      if (!parsed.success) {
+        return res.status(502).json({ error: "LLM returned malformed questions" });
+      }
+
+      res.json(parsed.data);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to generate quiz" });
+    }
+  });
+
   app.post("/api/generate", async (req, res) => {
     try {
       const { prompt, userId } = req.body;
