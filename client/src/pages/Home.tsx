@@ -136,6 +136,7 @@ export default function Home() {
           isGenerating={isGenerating}
           hasVideo={!!currentVideo}
           prompt={currentVideo?.prompt || prompt}
+          videoUrl={currentVideo?.videoUrl}
           onWatchAgain={handleWatchAgain}
         />
 

@@ -42,8 +42,32 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Prompt is required" });
       }
 
+      // Simulate processing time
       await new Promise((resolve) => setTimeout(resolve, 1500));
 
+      // Using local video for preview
+      const video = await storage.createGeneratedVideo({
+        prompt,
+        videoUrl: "/assets/vid.mp4", // Using local video
+        userId: userId || null,
+      });
+
+      const notesText = generateDummyNotes(prompt);
+      const notesRecord = await storage.createNotes({
+        videoId: video.id,
+        notesText,
+        downloaded: false,
+      });
+
+      res.json({
+        video: {
+          ...video,
+          videoUrl: "/assets/vid.mp4" // Ensure the URL is correctly set
+        },
+        notes: notesRecord,
+      });
+
+      /* Original API implementation - keeping it for future use
       const video = await storage.createGeneratedVideo({
         prompt,
         videoUrl: "/placeholder.mp4",
@@ -61,6 +85,7 @@ export async function registerRoutes(
         video,
         notes: notesRecord,
       });
+      */
     } catch (error) {
       console.error("Generate error:", error);
       res.status(500).json({ error: "Failed to generate video" });
