@@ -30,11 +30,19 @@ def run_manim_script(manim_code: str, scene_name: str, output_path: str = "stati
         # ----------------------
         media_root = os.path.join(os.getcwd(), "media", "videos")
 
-        # Latest Manim render folder
-        latest_dir = max(
-            [os.path.join(media_root, d) for d in os.listdir(media_root)],
-            key=os.path.getmtime
-        )
+# If no video folder exists → render failed → stop cleanly
+        if not os.path.exists(media_root):
+            print("❌ ERROR: media/videos folder does not exist. Manim render failed.")
+            return None
+
+        subdirs = [os.path.join(media_root, d) for d in os.listdir(media_root) if os.path.isdir(os.path.join(media_root, d))]
+
+        if not subdirs:
+            print("❌ ERROR: No subdirectories found in media/videos. Nothing to load.")
+            return None
+
+        latest_dir = max(subdirs, key=os.path.getmtime)
+
 
         final_video = None
         for root, _, files in os.walk(latest_dir):

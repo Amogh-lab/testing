@@ -11,34 +11,69 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function Home() {
   const [prompt, setPrompt] = useState("");
-  const { generateVideo, isGenerating, currentVideo, currentNotes, markNotesDownloaded } = useApp();
+  const {
+    generateVideo,
+    isGenerating,
+    setIsGenerating,
+    currentVideo,
+    currentNotes,
+    markNotesDownloaded
+  } = useApp();
+
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  const handleGenerate = async () => {
-    if (!prompt.trim()) {
-      toast({
-        title: "Please enter a prompt",
-        description: "Describe what you'd like to visualize",
-        variant: "destructive",
-      });
-      return;
+const handleGenerate = async () => {
+  if (isGenerating) return;
+  setIsGenerating(true);
+
+  if (!prompt.trim()) {
+    toast({
+      title: "Please enter a prompt",
+      description: "Describe what you'd like to visualize",
+      variant: "destructive",
+    });
+    setIsGenerating(false); // Make sure to set isGenerating to false
+    return;
+  }
+
+  try {
+    const res = await fetch("http://127.0.0.1:5000/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+      cache: 'no-store' // Prevent any caching of the request
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Backend responded with ${res.status} ${text}`);
     }
-    
-    try {
-      await generateVideo(prompt);
-      toast({
-        title: "Animation Generated!",
-        description: "Your visualization is ready to watch",
-      });
-    } catch (error) {
-      toast({
-        title: "Generation failed",
-        description: "Please try again",
-        variant: "destructive",
-      });
-    }
-  };
+
+    const data = await res.json();
+    if (!data.video_url) throw new Error("Missing video_url");
+
+    const backendUrl = data.video_url.startsWith("http")
+      ? data.video_url
+      : `http://127.0.0.1:5000${data.video_url}`;
+
+    await generateVideo(prompt, backendUrl);
+
+    toast({
+      title: "Animation Generated!",
+      description: "Your visualization is ready to watch",
+    });
+  } catch (err) {
+    console.error("handleGenerate error:", err);
+    toast({
+      title: "Generation failed",
+      description: err instanceof Error ? err.message : "Please try again",
+      variant: "destructive",
+    });
+  } finally {
+    setIsGenerating(false);
+  }
+};
 
   const handleWatchAgain = () => {
     console.log("Playing video again...");
@@ -86,15 +121,20 @@ export default function Home() {
         <Card className="border-2 border-dashed border-primary/30 bg-gradient-to-br from-primary/5 to-transparent">
           <CardContent className="p-6">
             <div className="flex gap-3">
-              <Input
-                placeholder="e.g., Visualize the Doppler effect, How does photosynthesis work..."
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleGenerate()}
-                className="flex-1 h-12 text-base"
-                disabled={isGenerating}
-                data-testid="input-prompt"
-              />
+                <Input
+                  placeholder="e.g., Visualize the Doppler effect..."
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !isGenerating) {
+                      handleGenerate();
+                    }
+                  }}
+                  className="flex-1 h-12 text-base"
+                  disabled={isGenerating}
+                  data-testid="input-prompt"
+                />
+
               <Button
                 size="lg"
                 onClick={handleGenerate}
@@ -135,7 +175,7 @@ export default function Home() {
         <VideoPlaceholder
           isGenerating={isGenerating}
           hasVideo={!!currentVideo}
-          prompt={currentVideo?.prompt || prompt}
+          // prompt={currentVideo?.prompt || prompt}
           videoUrl={currentVideo?.videoUrl}
           onWatchAgain={handleWatchAgain}
         />

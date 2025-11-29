@@ -1,11 +1,14 @@
 from flask import Flask, request, jsonify
 import traceback
 import re
+from flask_cors import CORS
+
 
 from planner.plannerscript import generate_dsl
 from planner.manim_run import run_manim_script
 
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 
 def extract_scene_name(code: str) -> str:

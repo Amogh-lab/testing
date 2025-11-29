@@ -7,6 +7,9 @@ load_dotenv()
 llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
     temperature=0,
+    top_p=1.0,              # <── THIS REDUCES HALLUCINATION A LOT
+    top_k=1,              # <── Forces most deterministic token selection
+    
 )
 
 def generate_dsl(user_prompt: str) -> str:
